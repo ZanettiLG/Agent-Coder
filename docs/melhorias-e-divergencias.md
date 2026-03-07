@@ -6,13 +6,15 @@ Documento de pesquisa que cruza a base de código e a documentação do projeto,
 
 **Método:** Leitura da documentação de produto e jornadas do usuário; inspeção do backend (server, tasks, worker), frontend (Board, overlays, API) e AGENTS.md; cruzamento para identificar onde a doc está atrás do código, onde há lacunas de UX e onde o produto pode evoluir.
 
+**Última revisão:** Março 2026 (validação contra código: rotas, status, componentes, API worker).
+
 ---
 
 ## 1. Resumo executivo
 
 | Categoria | Quantidade | Ação sugerida |
 |-----------|------------|---------------|
-| Divergências doc ↔ implementação | 8 | Atualizar documentação ou código para alinhar |
+| Divergências doc ↔ implementação | 9 | Atualizar documentação ou código para alinhar |
 | Melhorias de produto/UX | 5 | Avaliar prioridade e implementar |
 | Documentação incompleta | 3 | Completar docs (jornada, roadmap) |
 
@@ -75,7 +77,20 @@ Documento de pesquisa que cruza a base de código e a documentação do projeto,
 
 ---
 
-### 2.5 Enfileirar por drag-and-drop
+### 2.5 Estrutura de componentes no frontend
+
+| Onde | O que diz | Realidade no código |
+|------|------------|----------------------|
+| **pesquisa-jornada-tarefas.md** | "features/tasks/: TaskList.jsx, TaskDetail.jsx, TaskForm.jsx" | A aplicação **ativa** usa **Board.jsx**, Column, TaskCard, DraggableCard, **TaskDetailOverlay.jsx**, **TaskFormOverlay.jsx**. Os arquivos TaskList.jsx, TaskDetail.jsx e TaskForm.jsx existem no repositório mas **não são renderizados** por nenhuma rota do App (só há `/` e `/tasks/:id`, ambos com Board). |
+| **TaskForm.jsx** (vista lista) | STATUS_OPTIONS com 4 valores | Faltam **rejected** nas opções do select; o backend e o Kanban usam 5 status. |
+
+**Impacto para o usuário:** Nenhum direto (a UI usada é o Kanban). Para quem lê a pesquisa, a estrutura parece ser lista; na prática a entrada é sempre o board. Código morto ou vista lista desativada pode gerar confusão em manutenção.
+
+**Recomendação:** Na pesquisa, descrever a estrutura real (Board + overlays) como principal e marcar TaskList/TaskDetail/TaskForm como "vista lista (legado, não usado nas rotas atuais)" ou removê-los do código se não houver plano de uso. Se a vista lista for mantida, incluir `rejected` em TaskForm.jsx.
+
+---
+
+### 2.6 Enfileirar por drag-and-drop
 
 | Onde | O que diz | Realidade |
 |------|------------|-----------|
@@ -152,11 +167,12 @@ Estes pontos existem no produto mas não estão (ou estão pouco) descritos na j
 - [ ] **jornada-usuario-kanban.md:** Atualizar para 5 colunas; incluir Rejeitada em cenários, regras e fluxo; descrever Comentários, Progresso do agente e deep link.
 - [ ] **jornada-usuario-tarefas.md:** Nota ou atualização sobre os 5 status (doc legado lista).
 - [ ] **direcionamento-produto.md:** Incluir `rejected` no pipeline e na visibilidade (onde o usuário vê falha).
-- [ ] **pesquisa-jornada-tarefas.md:** Alinhar rotas ao que existe (`/`, `/tasks/:id`) e explicar criação/edição por overlay.
+- [ ] **pesquisa-jornada-tarefas.md:** Alinhar rotas ao que existe (`/`, `/tasks/:id`); explicar criação/edição por overlay; descrever estrutura real (Board + overlays) e marcar TaskList/TaskDetail/TaskForm como legado/não usados nas rotas.
 
-### Código (comentários)
+### Código (comentários e consistência)
 
 - [x] **Board.jsx:** Alterar comentário "4 colunas" para "5 colunas". **(feito)**
+- [ ] **TaskForm.jsx (vista lista):** Se a vista lista for mantida, adicionar status `rejected` em STATUS_OPTIONS para alinhar ao backend.
 
 ### Produto/UX (avaliar prioridade)
 
@@ -168,7 +184,15 @@ Estes pontos existem no produto mas não estão (ou estão pouco) descritos na j
 
 ---
 
-## 6. Referências
+## 6. Como usar este documento
+
+- **Prioridade:** Corrigir primeiro as divergências de **documentação** (seção 5), para que novos leitores e agentes vejam a realidade do produto (5 colunas, 5 status, overlay, rejeitada, comentários, log).
+- **Produto/UX:** As melhorias da seção 4 (worker na UI, optimistic update, feedback ao enfileirar, acessibilidade) devem ser priorizadas com o time; o **Roadmap.md** concentra os itens acionáveis.
+- **Revisão periódica:** Ao alterar fluxos, status ou componentes, revalidar este documento (cruzamento doc ↔ código) e atualizar a data em "Última revisão".
+
+---
+
+## 7. Referências
 
 - Jornada Kanban: [jornada-usuario-kanban.md](jornada-usuario-kanban.md)
 - Jornada lista: [jornada-usuario-tarefas.md](jornada-usuario-tarefas.md)

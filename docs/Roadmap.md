@@ -9,7 +9,7 @@ Itens derivados do documento [melhorias-e-divergencias.md](melhorias-e-divergenc
 - [ ] **jornada-usuario-kanban.md:** Atualizar para 5 colunas; incluir Rejeitada em cenários, regras e fluxo; descrever Comentários, Progresso do agente e deep link.
 - [ ] **jornada-usuario-tarefas.md:** Nota ou atualização sobre os 5 status (doc legado lista).
 - [ ] **direcionamento-produto.md:** Incluir `rejected` no pipeline e na visibilidade (onde o usuário vê falha).
-- [ ] **pesquisa-jornada-tarefas.md:** Alinhar rotas ao que existe (`/`, `/tasks/:id`) e explicar criação/edição por overlay.
+- [ ] **pesquisa-jornada-tarefas.md:** Alinhar rotas (`/`, `/tasks/:id`); explicar criação/edição por overlay; descrever estrutura real (Board + overlays) e marcar TaskList/TaskDetail/TaskForm como legado/não usados nas rotas.
 
 ---
 
