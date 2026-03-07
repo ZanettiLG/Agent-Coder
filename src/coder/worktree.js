@@ -5,7 +5,7 @@
  */
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, execSync } = require("node:child_process");
 
 const BRANCH_PREFIX = "agent/task-";
 
@@ -26,6 +26,16 @@ function runGit(repoRoot, args, options = {}) {
     cwd: repoRoot,
     ...options,
   });
+}
+
+/**
+ * Executa comando git com argumentos entre aspas para o shell.
+ * Caminhos com espaços (ex.: "Agent Coder") não são partidos; evita
+ * "fatal: invalid reference: Coder/..." quando o path contém espaço.
+ */
+function runGitQuoted(repoRoot, ...args) {
+  const quoted = args.map((a) => (typeof a === "string" ? JSON.stringify(a) : String(a)));
+  return execSync(["git", ...quoted].join(" "), { encoding: "utf8", cwd: repoRoot });
 }
 
 function isWorktreePath(repoRoot, worktreePath) {
@@ -57,13 +67,13 @@ function createWorktree(repoRoot, worktreePath, taskId) {
 
   if (fs.existsSync(wtPath)) {
     if (isWorktreePath(root, wtPath)) {
-      runGit(root, ["worktree", "remove", "--force", wtPath]);
+      runGitQuoted(root, "worktree", "remove", "--force", wtPath);
     } else {
       fs.rmSync(wtPath, { recursive: true, force: true });
     }
   }
 
-  runGit(root, ["worktree", "add", wtPath, "-b", branchName]);
+  runGitQuoted(root, "worktree", "add", wtPath, "-b", branchName);
   return wtPath;
 }
 
@@ -92,7 +102,7 @@ function mergeWorktree(repoRoot, worktreePath, taskId) {
   }
 
   runGit(root, ["merge", branchName, "--no-edit"]);
-  runGit(root, ["worktree", "remove", wtPath]);
+  runGitQuoted(root, "worktree", "remove", wtPath);
   runGit(root, ["branch", "-d", branchName]);
 }
 
@@ -110,7 +120,7 @@ function removeWorktree(repoRoot, worktreePath, taskId) {
 
   try {
     if (isWorktreePath(root, wtPath)) {
-      runGit(root, ["worktree", "remove", "--force", wtPath]);
+      runGitQuoted(root, "worktree", "remove", "--force", wtPath);
     } else if (fs.existsSync(wtPath)) {
       fs.rmSync(wtPath, { recursive: true, force: true });
     }
