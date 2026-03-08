@@ -11,8 +11,8 @@ function createNotifier(serverUrl, getTask, logError = () => {}) {
   const baseUrl = serverUrl.replace(/\/$/, "");
 
   return {
-    notifyTaskUpdated(taskId) {
-      const updated = getTask(taskId);
+    async notifyTaskUpdated(taskId) {
+      const updated = await Promise.resolve(getTask(taskId));
       if (!updated) return;
       fetch(`${baseUrl}/api/internal/broadcast`, {
         method: "POST",

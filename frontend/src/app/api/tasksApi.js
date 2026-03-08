@@ -3,10 +3,27 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 export const tasksApi = createApi({
   reducerPath: 'tasksApi',
   baseQuery: fetchBaseQuery({ baseUrl: '/' }),
-  tagTypes: ['Task', 'TaskList', 'TaskComments', 'WorkerStatus', 'RepoFiles'],
+  tagTypes: ['Task', 'TaskList', 'TaskComments', 'WorkerStatus', 'RepoFiles', 'Project'],
   endpoints: (builder) => ({
+    getProjects: builder.query({
+      query: () => '/api/projects',
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'Project', id })),
+              { type: 'Project', id: 'LIST' },
+            ]
+          : [{ type: 'Project', id: 'LIST' }],
+    }),
+    getProject: builder.query({
+      query: (id) => `/api/projects/${id}`,
+      providesTags: (_result, _err, id) => [{ type: 'Project', id }],
+    }),
     getTasks: builder.query({
-      query: () => '/api/tasks',
+      query: (projectId) => ({
+        url: '/api/tasks',
+        params: projectId != null && projectId !== '' ? { project_id: projectId } : {},
+      }),
       providesTags: (result) =>
         result
           ? [
@@ -37,7 +54,7 @@ export const tasksApi = createApi({
         method: 'POST',
         body,
       }),
-      invalidatesTags: [{ type: 'TaskList', id: 'LIST' }],
+      invalidatesTags: [{ type: 'TaskList', id: 'LIST' }, { type: 'Project', id: 'LIST' }],
     }),
     updateTask: builder.mutation({
       query: ({ id, ...body }) => ({
@@ -115,6 +132,8 @@ export const tasksApi = createApi({
 });
 
 export const {
+  useGetProjectsQuery,
+  useGetProjectQuery,
   useGetTasksQuery,
   useGetTaskQuery,
   useGetTaskLogQuery,

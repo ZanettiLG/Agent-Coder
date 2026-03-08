@@ -15,6 +15,7 @@ const { buildContextBlock } = require("../tasks/contextBuilder");
  * @param {() => boolean} deps.isAgentInPath
  * @param {(taskId: number | string) => string} deps.getWorkspacePath
  * @param {string} deps.repoRoot
+ * @param {string|number|null} [deps.projectId] - Optional project id for queue filtering (worker consumes only this project).
  */
 function createTaskProcessor(deps) {
   const {
@@ -28,44 +29,33 @@ function createTaskProcessor(deps) {
     isAgentInPath,
     getWorkspacePath,
     repoRoot,
+    projectId,
   } = deps;
 
-  async function processNextTask() {
-    writeStatus({ lastPollAt: new Date().toISOString(), recentLogLines: logger.getRecentLogLines() });
-
-    let task = null;
-    const startedAt = Date.now();
+  async function runOneTask(task, startedAt) {
     try {
-      if (!cursorApiKey) {
-        logger.logInfo("CURSOR_API_KEY not set; agent runs will fail");
-        return;
-      }
-
-      task = taskService.getNextQueued();
-      if (!task) return;
-
       logger.logInfo(`Processing task ${task.id}: ${task.title}`);
-      taskService.updateTask(task.id, { status: "in_progress" });
-      taskService.appendEvent(task.id, { type: "worker_start", text: "Worker started task." });
-      taskService.appendEvent(task.id, { type: "started", text: "Agent started." });
-      notifier.notifyTaskUpdated(task.id);
+      await Promise.resolve(taskService.updateTask(task.id, { status: "in_progress" }));
+      await Promise.resolve(taskService.appendEvent(task.id, { type: "worker_start", text: "Worker started task." }));
+      await Promise.resolve(taskService.appendEvent(task.id, { type: "started", text: "Agent started." }));
+      await notifier.notifyTaskUpdated(task.id);
 
       if (!isAgentInPath()) {
         logger.logError("Binary 'agent' not found in PATH");
         const msg = "Binary 'agent' not found in PATH";
-        taskService.appendEvent(task.id, { type: "error", text: msg });
-        taskService.updateTask(task.id, { status: "rejected", failure_reason: msg });
-        taskService.addComment(task.id, { author: "agent", content: msg });
-        notifier.notifyTaskUpdated(task.id);
-        writeStatus({
+        await Promise.resolve(taskService.appendEvent(task.id, { type: "error", text: msg }));
+        await Promise.resolve(taskService.updateTask(task.id, { status: "rejected", failure_reason: msg }));
+        await Promise.resolve(taskService.addComment(task.id, { author: "agent", content: msg }));
+        await notifier.notifyTaskUpdated(task.id);
+        await Promise.resolve(writeStatus({
           lastPollAt: new Date().toISOString(),
           lastTaskId: task.id,
           lastTaskStatus: "rejected",
           lastTaskAt: new Date().toISOString(),
           lastError: "Binary 'agent' not found in PATH",
           recentLogLines: logger.getRecentLogLines(),
-        });
-        taskService.appendEvent(task.id, { type: "worker_end", durationMs: Date.now() - startedAt });
+        }));
+        await Promise.resolve(taskService.appendEvent(task.id, { type: "worker_end", durationMs: Date.now() - startedAt }));
         return;
       }
 
@@ -75,19 +65,19 @@ function createTaskProcessor(deps) {
       } catch (worktreeErr) {
         const msg = worktreeErr.message || "Failed to create git worktree";
         logger.logError("createWorktree failed", worktreeErr);
-        taskService.appendEvent(task.id, { type: "error", text: msg });
-        taskService.updateTask(task.id, { status: "rejected", failure_reason: msg });
-        taskService.addComment(task.id, { author: "agent", content: msg });
-        notifier.notifyTaskUpdated(task.id);
-        writeStatus({
+        await Promise.resolve(taskService.appendEvent(task.id, { type: "error", text: msg }));
+        await Promise.resolve(taskService.updateTask(task.id, { status: "rejected", failure_reason: msg }));
+        await Promise.resolve(taskService.addComment(task.id, { author: "agent", content: msg }));
+        await notifier.notifyTaskUpdated(task.id);
+        await Promise.resolve(writeStatus({
           lastPollAt: new Date().toISOString(),
           lastTaskId: task.id,
           lastTaskStatus: "rejected",
           lastTaskAt: new Date().toISOString(),
           lastError: msg,
           recentLogLines: logger.getRecentLogLines(),
-        });
-        taskService.appendEvent(task.id, { type: "worker_end", durationMs: Date.now() - startedAt });
+        }));
+        await Promise.resolve(taskService.appendEvent(task.id, { type: "worker_end", durationMs: Date.now() - startedAt }));
         return;
       }
 
@@ -104,10 +94,10 @@ function createTaskProcessor(deps) {
 
       const callbacks = {
         onChunk(text) {
-          taskService.appendEvent(task.id, { type: "chunk", text });
+          Promise.resolve(taskService.appendEvent(task.id, { type: "chunk", text })).catch(() => {});
         },
         onDone(result) {
-          taskService.appendEvent(task.id, { type: "done", result: result ?? null });
+          Promise.resolve(taskService.appendEvent(task.id, { type: "done", result: result ?? null })).catch(() => {});
         },
       };
 
@@ -118,39 +108,39 @@ function createTaskProcessor(deps) {
         worktree.mergeWorktree(repoRoot, workspacePath, task.id);
       } catch (mergeErr) {
         logger.logError("mergeWorktree failed", mergeErr);
-        taskService.appendEvent(task.id, { type: "error", text: mergeErr.message });
+        await Promise.resolve(taskService.appendEvent(task.id, { type: "error", text: mergeErr.message }));
         worktree.removeWorktree(repoRoot, workspacePath, task.id);
-        taskService.updateTask(task.id, {
+        await Promise.resolve(taskService.updateTask(task.id, {
           status: "rejected",
           failure_reason: `Merge falhou: ${mergeErr.message}`,
-        });
-        taskService.addComment(task.id, { author: "agent", content: mergeErr.message });
-        notifier.notifyTaskUpdated(task.id);
-        writeStatus({
+        }));
+        await Promise.resolve(taskService.addComment(task.id, { author: "agent", content: mergeErr.message }));
+        await notifier.notifyTaskUpdated(task.id);
+        await Promise.resolve(writeStatus({
           lastPollAt: new Date().toISOString(),
           lastTaskId: task.id,
           lastTaskStatus: "rejected",
           lastTaskAt: new Date().toISOString(),
           lastError: mergeErr.message,
           recentLogLines: logger.getRecentLogLines(),
-        });
-        taskService.appendEvent(task.id, { type: "worker_end", durationMs });
+        }));
+        await Promise.resolve(taskService.appendEvent(task.id, { type: "worker_end", durationMs }));
         return;
       }
-      taskService.appendEvent(task.id, { type: "worker_end", durationMs });
-      taskService.updateTask(task.id, { status: "done" });
-      taskService.addComment(task.id, { author: "agent", content: "Tarefa concluída com sucesso." });
-      notifier.notifyTaskUpdated(task.id);
+      await Promise.resolve(taskService.appendEvent(task.id, { type: "worker_end", durationMs }));
+      await Promise.resolve(taskService.updateTask(task.id, { status: "done" }));
+      await Promise.resolve(taskService.addComment(task.id, { author: "agent", content: "Tarefa concluída com sucesso." }));
+      await notifier.notifyTaskUpdated(task.id);
       logger.logInfo(`Task ${task.id} done (${durationMs}ms).`);
-      writeStatus({
+      await Promise.resolve(writeStatus({
         lastPollAt: new Date().toISOString(),
         lastTaskId: task.id,
         lastTaskStatus: "done",
         lastTaskAt: new Date().toISOString(),
         recentLogLines: logger.getRecentLogLines(),
-      });
+      }));
     } catch (err) {
-      logger.logError("processNextTask error", err);
+      logger.logError("runOneTask error", err);
       const durationMs = Date.now() - startedAt;
       if (task && task.id) {
         const workspacePath = getWorkspacePath(task.id);
@@ -170,27 +160,52 @@ function createTaskProcessor(deps) {
         };
         if (stderrText) errorPayload.stderr = stderrText;
         if (stdoutText) errorPayload.stdout = stdoutText;
-        taskService.appendEvent(task.id, errorPayload);
-        taskService.appendEvent(task.id, { type: "worker_end", durationMs });
-        taskService.updateTask(task.id, {
+        await Promise.resolve(taskService.appendEvent(task.id, errorPayload));
+        await Promise.resolve(taskService.appendEvent(task.id, { type: "worker_end", durationMs }));
+        await Promise.resolve(taskService.updateTask(task.id, {
           status: "rejected",
           failure_reason: detail || err.message,
-        });
-        taskService.addComment(task.id, { author: "agent", content: detail || err.message });
-        notifier.notifyTaskUpdated(task.id);
+        }));
+        await Promise.resolve(taskService.addComment(task.id, { author: "agent", content: detail || err.message }));
+        await notifier.notifyTaskUpdated(task.id);
       }
-      writeStatus({
+      await Promise.resolve(writeStatus({
         lastPollAt: new Date().toISOString(),
         lastTaskId: task?.id ?? null,
         lastTaskStatus: "rejected",
         lastTaskAt: new Date().toISOString(),
         lastError: err.message,
         recentLogLines: logger.getRecentLogLines(),
-      });
+      }));
     }
   }
 
-  return { processNextTask };
+  async function processNextTask() {
+    await Promise.resolve(writeStatus({ lastPollAt: new Date().toISOString(), recentLogLines: logger.getRecentLogLines() }));
+    if (!cursorApiKey) {
+      logger.logInfo("CURSOR_API_KEY not set; agent runs will fail");
+      return;
+    }
+    const task = await Promise.resolve(taskService.getNextQueued(projectId));
+    if (!task) return;
+    const startedAt = Date.now();
+    await runOneTask(task, startedAt);
+  }
+
+  async function processTaskById(taskId) {
+    await Promise.resolve(writeStatus({ lastPollAt: new Date().toISOString(), recentLogLines: logger.getRecentLogLines() }));
+    if (!cursorApiKey) {
+      logger.logInfo("CURSOR_API_KEY not set; agent runs will fail");
+      return;
+    }
+    const task = await Promise.resolve(taskService.getTask(taskId));
+    if (!task || task.status !== "queued") return;
+    if (projectId != null && Number(task.project_id) !== Number(projectId)) return;
+    const startedAt = Date.now();
+    await runOneTask(task, startedAt);
+  }
+
+  return { processNextTask, processTaskById };
 }
 
 module.exports = { createTaskProcessor };

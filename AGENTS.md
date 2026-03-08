@@ -10,10 +10,12 @@ Este documento orienta agentes e LLMs a manter, estender e depurar o projeto. Hu
 
 - Gerencia **tarefas** (CRUD) com conteúdo em Markdown.
 - Expõe uma **fila de processos**: tarefas com status `queued` são consumidas por um **worker** que executa uma thread do agente (Cursor) por tarefa, com **contexto isolado** (workspace e “chat” por tarefa).
-- **Backend**: Express, SQLite (metadados), arquivos `.md` em `./tasks` (corpo da tarefa).
+- **Backend**: Express; persistência em **PostgreSQL** (quando `DATABASE_URL`) ou SQLite + arquivos (modo legado). Tarefas pertencem a **projetos**; fila por projeto com **pg-boss**; worker consome da fila ou por polling.
 - **Frontend**: React, MUI, Redux Toolkit, RTK Query (em `frontend/`).
 
 O agente **não** é iniciado em `src/index.js`; esse arquivo só exporta módulos. O agente roda apenas via **worker** (`npm run worker`), uma tarefa por vez.
+
+**Arquitetura alvo (escala horizontal)**: Persistência em **PostgreSQL**; fila de jobs com **pg-boss** (fila por projeto); **workers** rodando dentro de cada repositório, consumindo apenas a fila daquele projeto; API central opcionalmente com **Redis** para Socket.IO multi-instância. Detalhes em [docs/03-arquitetura.md](docs/03-arquitetura.md) e nos planos em [docs/plans/](docs/plans/) (01–05).
 
 ---
 
@@ -71,18 +73,19 @@ agent-coder/
 
 ## 4. API de tarefas
 
-- `GET /api/tasks` – lista (metadados, sem body).
+- `GET /api/projects` – lista projetos. `GET /api/projects/:id`, `POST /api/projects`, `PUT /api/projects/:id`, `DELETE /api/projects/:id` – CRUD de projetos.
+- `GET /api/tasks` – lista tarefas. Query opcional `?project_id=N` para filtrar por projeto.
 - `GET /api/tasks/:id` – uma tarefa (com body).
 - `GET /api/tasks/:id/log` – log de eventos do agente para a tarefa (array: started, chunk, done, error, worker_start, worker_end). Query opcional `?last=N`: retorna apenas as últimas N linhas (limitado por `config.maxLogLines`; configurável via `TASK_LOG_MAX_LINES`). Sem `last`, retorna no máximo `maxLogLines` eventos (evita carregar log gigante).
 - `GET /api/tasks/:id/comments` – lista de comentários da tarefa (ordenados por `created_at`); 404 se tarefa não existir.
 - `POST /api/tasks/:id/comments` – criar comentário; body: `{ content (string), author?: 'user'|'agent' }` (default `user`); 404 se tarefa não existir.
-- `POST /api/tasks` – criar; body: `{ title, body?, status?, context? }`. `context` é um array de referências (ex.: `[{ type: 'file', path: 'src/foo.js' }, { type: 'git', scope: 'working' }]`). Tipos: `file`, `folder`, `codebase`, `docs`, `git`, `skill`, `rule`.
+- `POST /api/tasks` – criar; body: `{ title, body?, status?, context?, project_id? }`. `project_id` (opcional) associa à tarefa; default 1. `context` é um array de referências (ex.: `[{ type: 'file', path: 'src/foo.js' }, { type: 'git', scope: 'working' }]`). Tipos: `file`, `folder`, `codebase`, `docs`, `git`, `skill`, `rule`.
 - `PUT /api/tasks/:id` – atualizar; body: `{ title?, body?, status?, failure_reason?, context? }`.
 - `DELETE /api/tasks/:id` – excluir.
 - `POST /api/tasks/:id/queue` – enfileirar (status → `queued`).
 - `POST /api/internal/broadcast` – interno: emite evento Socket.IO (body `{ event, data }`); **apenas localhost** (403 fora).
-- `GET /api/worker/status` – status do worker: `alive` (último poll &lt; 60s), `lastPollAt`, `lastTaskId`, `lastTaskStatus`, `lastTaskAt`, `lastError`, `recentLogLines` (últimas ~100 linhas do log do worker). Dados lidos de `data/worker-status.json` (atualizado pelo worker).
-- `GET /api/repo/files` – lista arquivos e pastas do repositório (para o seletor de contexto no frontend). Query: `?path=src` (opcional). Retorna `{ path, entries: [{ path, type: 'file'|'folder', name }] }`. Exige que o processo rode a partir de um diretório dentro de um repositório git (senão 500).
+- `GET /api/worker/status` – status do worker: `alive` (último poll &lt; 60s), `lastPollAt`, `lastTaskId`, `lastTaskStatus`, `lastTaskAt`, `lastError`, `recentLogLines`. Com `DATABASE_URL`, dados vêm da tabela `worker_heartbeats`; senão de `data/worker-status.json`.
+- `GET /api/repo/files` – lista arquivos e pastas do repositório (para o seletor de contexto). Query: `?path=src` (opcional), `?project_id=N` (opcional). Com `project_id`, o servidor usa o path do env `PROJECT_ROOT_<id>` se definido; senão usa a raiz git do `cwd`. Retorna `{ path, entries: [{ path, type: 'file'|'folder', name }] }`.
 
 Status: `open`, `queued`, `in_progress`, `done`, `rejected`. Quando o worker falha, o status vai para `rejected` e a justificativa fica em `failure_reason` (resposta de `GET`/`PUT` inclui o campo quando existir).
 
@@ -92,7 +95,7 @@ O servidor usa **Socket.IO**; eventos emitidos: `task:updated` (payload `{ id, t
 
 ## 5. Fila e worker
 
-- Tarefas com status **`queued`** são consumidas pelo worker (polling; intervalo configurável por `WORKER_POLL_MS`).
+- Tarefas com status **`queued`** são consumidas pelo worker. Com **`DATABASE_URL`** e **`PROJECT_ID`**: o worker inscreve-se na fila **pg-boss** `agent-tasks:${PROJECT_ID}` e processa jobs (um job por tarefa enfileirada; ao enfileirar, a API publica o job). Sem Postgres: **polling** (intervalo `WORKER_POLL_MS`).
 - **Git worktree**: antes de rodar o agente, o worker cria um **git worktree** em `tasks/workspaces/{taskId}` com branch `agent/task-{taskId}` (via `src/coder/worktree.js`). O agente roda nesse worktree. Se a tarefa **concluir com sucesso** → commit das alterações no worktree (se houver), **merge** da branch no repositório principal, remoção do worktree e da branch. Se **falhar** → **removeWorktree** (worktree e branch removidos).
 - Para cada tarefa: status → `in_progress`, **appendEvent(taskId, { type: 'started' })**, **createWorktree(repoRoot, workspacePath, taskId)**, **buildContextBlock(repoRoot, task.context)** monta o bloco de contexto (arquivos, pastas, git diff, codebase, skills) a partir das referências da tarefa; o **prompt** enviado ao coder é `contextBlock + body` (ou só body se não houver contexto). **Novo coder** via `createCoder({ workspace, outputFormat: 'stream' })`, **code(prompt, { onChunk, onDone })** com callbacks que chamam **appendEvent** (chunk, done, error). Ao terminar → **mergeWorktree** (ou em erro **removeWorktree**), então status `done` e **addComment** (sucesso) ou `rejected`, **addComment** (falha).
 - Cada execução do agente é **contexto limpo** (outro “chat”): um coder por tarefa, workspace = worktree isolado. Log do agente em `tasks/workspaces/{taskId}/agent.log` (NDJSON).
@@ -137,18 +140,62 @@ O servidor usa **Socket.IO**; eventos emitidos: `task:updated` (payload `{ id, t
 
 ---
 
-## 9. Ambiente
+## 9. Ambiente (variáveis de ambiente)
 
-- **Variáveis**: `CURSOR_API_KEY` (config do coder); `PORT` (servidor); `HOST` (opcional, interface do servidor; padrão `0.0.0.0` para aceitar conexões da rede interna); `WORKER_POLL_MS` (opcional, intervalo do worker em ms); `SERVER_URL` (opcional, URL do servidor para o worker notificar broadcast, padrão `http://localhost:PORT`); `TASK_LOG_MAX_LINES` (opcional, limite máximo de linhas retornadas em `GET /api/tasks/:id/log`; default 2000).
-- **Arquivo `.env`** na raiz (não versionado).
+Arquivo **`.env`** na raiz (não versionado). Tabela por contexto:
+
+| Variável | Onde | Obrigatório | Descrição |
+|----------|------|-------------|-----------|
+| **API (servidor)** |
+| `PORT` | API | Não (default 3000) | Porta do servidor HTTP. |
+| `HOST` | API | Não (default `0.0.0.0`) | Interface (ex.: `0.0.0.0` para rede interna). |
+| `DATABASE_URL` | API | Sim (arquitetura alvo) | URL de conexão PostgreSQL (ex.: `postgresql://user:pass@host:5432/db`). Sem ela, o sistema pode usar SQLite/arquivos (modo legado). |
+| `REDIS_URL` | API | Não | URL do Redis (ex.: `redis://localhost:6379`). Quando definida, habilita **Socket.IO Redis adapter** para broadcast entre múltiplas instâncias da API. |
+| **Worker** |
+| `PROJECT_ID` | Worker | Sim (arquitetura alvo) | ID do projeto (repositório) que este worker atende. O worker consome apenas a fila `agent-tasks:${PROJECT_ID}`. |
+| `REPO_ROOT` | Worker | Não | Path absoluto da raiz do repositório. Se omitido, usa `process.cwd()` (ou `findGitRoot(process.cwd())`). |
+| `DATABASE_URL` | Worker | Sim (arquitetura alvo) | Mesmo Postgres da API; usado para ler tarefas e gravar heartbeats em `worker_heartbeats`. |
+| `SERVER_URL` | Worker | Não | URL do servidor para notificar broadcast (ex.: `http://localhost:3000`). Padrão: `http://localhost:${PORT}`. Usado em `POST /api/internal/broadcast` após concluir/rejeitar tarefa. |
+| `CURSOR_API_KEY` | Worker | Sim (para rodar agente) | Chave para o CLI do Cursor (coder). |
+| `WORKER_POLL_MS` | Worker | Não | Intervalo de polling em ms (modo legado, sem DATABASE_URL). Com pg-boss o worker consome da fila. |
+| `WORKER_ID` | Worker | Não | Identificador do processo (default: hostname-pid). Usado em `worker_heartbeats` quando DATABASE_URL. |
+| **API (repo/files)** |
+| `PROJECT_ROOT_<id>` | API | Não | Path absoluto do repositório do projeto `<id>` para `GET /api/repo/files?project_id=<id>`. Ex.: `PROJECT_ROOT_1=/var/repos/meu-projeto`. |
+| **Comum** |
+| `TASK_LOG_MAX_LINES` | API | Não (default 2000) | Limite máximo de linhas/eventos retornados em `GET /api/tasks/:id/log`. |
+
+**Quando usar**: Em desenvolvimento local pode-se usar apenas SQLite (sem `DATABASE_URL`) e um worker no mesmo host. Para escala horizontal: definir `DATABASE_URL` (Postgres), um worker por projeto com `PROJECT_ID` e `REPO_ROOT` (se necessário); para várias instâncias da API, definir `REDIS_URL`.
 
 ---
 
-## 10. Referências no repositório
+## 10. Deploy
+
+Ordem recomendada e dependências:
+
+1. **PostgreSQL**: Banco disponível; aplicar **migrations** (`backend/migrations/` ou equivalente) antes de subir a API (schema: `projects`, `tasks`, `task_comments`, `task_log_events`, `worker_heartbeats`; pg-boss cria suas próprias tabelas ao iniciar).
+2. **API**: `npm run server` (ou `npm start`). Definir `DATABASE_URL`. Opcional: `REDIS_URL` para múltiplas instâncias da API atrás de load balancer (Socket.IO com Redis adapter).
+3. **Workers**: Um **processo worker por projeto/repositório**. Em cada máquina ou diretório onde há um clone do repo, subir um worker com `PROJECT_ID` igual ao id desse projeto no banco e, se necessário, `REPO_ROOT` apontando para a raiz do clone. Comando: `npm run worker`. O worker conecta ao mesmo Postgres (e pg-boss), inscreve-se na fila `agent-tasks:${PROJECT_ID}` e processa apenas tarefas desse projeto. Vários workers do **mesmo** projeto podem rodar em paralelo (mesma fila, jobs distribuídos).
+
+**Resumo**: (1) Migrations → (2) API com `DATABASE_URL` (e opcionalmente `REDIS_URL`) → (3) Workers com `PROJECT_ID`, `DATABASE_URL`, `SERVER_URL`, `CURSOR_API_KEY`. Ver [docs/03-arquitetura.md](docs/03-arquitetura.md) para arquitetura e [docs/plans/](docs/plans/) para detalhes de cada módulo.
+
+**Config e Docker**
+
+- **`.env.example`** (raiz): template de variáveis; copiar para `.env` e preencher (`.env` não é versionado).
+- **`docker-compose.yml`** (raiz): sobe Postgres, Redis e o serviço **api** (backend). O serviço **worker** está em profile `worker`; para subir: `docker compose --profile worker up`. O worker usa `env_file: .env` (definir `CURSOR_API_KEY` no `.env`). Migrations rodam automaticamente no primeiro uso da API (composition root com Postgres).
+
+---
+
+## 11. Referências no repositório
 
 - **docs/README.md** – índice da documentação.
 - Produto e visibilidade do agente: `docs/01-produto.md`.
 - Jornada do usuário (Kanban + legado): `docs/02-jornada-usuario.md`.
-- Arquitetura e decisões (stack, rotas): `docs/03-arquitetura.md`.
+- Arquitetura e decisões (stack, rotas, deploy): `docs/03-arquitetura.md`.
 - UX, responsividade e acessibilidade: `docs/04-ux-acessibilidade.md`.
 - Roadmap e histórico: `docs/05-roadmap.md`.
+- **Planos de implementação (escala horizontal)** em **docs/plans/**:
+  - [01-postgres-migration.md](docs/plans/01-postgres-migration.md) – Schema Postgres e migrations (T1–T3).
+  - [02-projects-entity.md](docs/plans/02-projects-entity.md) – Projetos como entidade, API e frontend (T4–T5).
+  - [03-queue-pgboss.md](docs/plans/03-queue-pgboss.md) – Fila pg-boss por projeto (T6).
+  - [04-worker-client.md](docs/plans/04-worker-client.md) – Worker desacoplado por projeto (T7).
+  - [05-api-realtime.md](docs/plans/05-api-realtime.md) – Socket.IO Redis, repo/files por projeto (T8).

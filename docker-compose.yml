@@ -1,0 +1,82 @@
+# Agent Coder – stack para desenvolvimento e deploy com Postgres + Redis
+# Uso: cp .env.example .env && docker compose up -d
+# API: http://localhost:3000
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agentcoder
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: agentcoder
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentcoder -d agentcoder"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://agentcoder:secret@postgres:5432/agentcoder
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      # Só sobe com: docker compose --profile server up
+      - server
+
+  # Worker opcional: roda neste próprio repo (project_id 1). Para outros projetos, rode o worker fora do compose com PROJECT_ID e repo montado.
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["node", "src/worker/run.js"]
+    environment:
+      DATABASE_URL: postgresql://agentcoder:secret@postgres:5432/agentcoder
+      SERVER_URL: http://api:3000
+      PROJECT_ID: 1
+      REPO_ROOT: /repo
+      # CURSOR_API_KEY deve ser definido em .env ou no host e passado via env_file
+    env_file:
+      - .env
+    volumes:
+      # Monta o próprio repo como workspace do worker (raiz do git; rw para criar worktrees em tasks/workspaces)
+      - .:/repo
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+    profiles:
+      # Só sobe com: docker compose --profile worker up
+      - worker
+
+volumes:
+  postgres_data:

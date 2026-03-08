@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -6,8 +7,19 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
-import { AppBar, Toolbar, Typography, Box, CircularProgress, Alert } from '@mui/material';
-import { useGetTasksQuery } from '../../app/api/tasksApi';
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Box,
+  CircularProgress,
+  Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+} from '@mui/material';
+import { useGetProjectsQuery, useGetTasksQuery } from '../../app/api/tasksApi';
 import { STATUS_ORDER, groupTasksByStatus } from './statusLabels';
 import Column from './Column';
 import TaskCard from './TaskCard';
@@ -39,7 +51,16 @@ function Board({ openTaskId }) {
     handleDragEnd,
   } = useBoardState(openTaskId);
 
-  const { data: tasks, isLoading, error } = useGetTasksQuery();
+  const { data: projects = [] } = useGetProjectsQuery();
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  useEffect(() => {
+    if (projects.length > 0 && selectedProjectId === '') {
+      setSelectedProjectId(String(projects[0].id));
+    }
+  }, [projects, selectedProjectId]);
+
+  const projectIdForQuery = selectedProjectId === '' ? undefined : Number(selectedProjectId);
+  const { data: tasks, isLoading, error } = useGetTasksQuery(projectIdForQuery);
   const byStatus = groupTasksByStatus(tasks ?? []);
 
   if (isLoading) {
@@ -62,9 +83,27 @@ function Board({ openTaskId }) {
     <>
       <AppBar position="static">
         <Toolbar>
-          <Typography variant="h6" component="span" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" component="span" sx={{ mr: 2 }}>
             Tarefas
           </Typography>
+          {projects.length > 0 && (
+            <FormControl size="small" sx={{ minWidth: 180 }} color="inherit">
+              <InputLabel id="board-project-label">Projeto</InputLabel>
+              <Select
+                labelId="board-project-label"
+                value={selectedProjectId}
+                label="Projeto"
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+              >
+                {projects.map((p) => (
+                  <MenuItem key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          <Box sx={{ flexGrow: 1 }} />
           <WorkerStatusIndicator />
         </Toolbar>
       </AppBar>
@@ -116,6 +155,7 @@ function Board({ openTaskId }) {
         open={formState.open}
         taskId={formState.taskId}
         initialStatus={formState.status}
+        initialProjectId={selectedProjectId ? Number(selectedProjectId) : undefined}
         onClose={handleCloseForm}
         onSuccess={() => {}}
       />

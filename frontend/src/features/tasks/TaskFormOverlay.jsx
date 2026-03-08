@@ -20,6 +20,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import { useSnackbar } from '../../app/SnackbarContext';
+import { useGetProjectsQuery } from '../../app/api/tasksApi';
 import { getStatusLabel, STATUS_OPTIONS } from './statusLabels';
 import { useTaskForm } from './useTaskForm';
 import RepoFilePickerDialog from './RepoFilePickerDialog';
@@ -27,8 +28,16 @@ import RepoFilePickerDialog from './RepoFilePickerDialog';
 /**
  * Formulário de criar/editar tarefa em overlay (modal). Usado no board Kanban.
  * taskId = null para criar; initialStatus = status da coluna ao clicar "Adicionar card".
+ * initialProjectId = projeto selecionado no board ao criar.
  */
-function TaskFormOverlay({ open, taskId, initialStatus = 'open', onClose, onSuccess }) {
+function TaskFormOverlay({
+  open,
+  taskId,
+  initialStatus = 'open',
+  initialProjectId,
+  onClose,
+  onSuccess,
+}) {
   const { showSnackbar } = useSnackbar();
   const {
     title,
@@ -39,12 +48,15 @@ function TaskFormOverlay({ open, taskId, initialStatus = 'open', onClose, onSucc
     setBody,
     context,
     setContext,
+    projectId,
+    setProjectId,
     handleSubmit,
     isSubmitting,
     isLoadingTask,
     isEdit,
-  } = useTaskForm({ taskId, initialStatus, open });
+  } = useTaskForm({ taskId, initialStatus, initialProjectId, open });
 
+  const { data: projects = [] } = useGetProjectsQuery(undefined, { skip: !open });
   const [contextMenuAnchor, setContextMenuAnchor] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMode, setPickerMode] = useState('file');
@@ -106,6 +118,23 @@ function TaskFormOverlay({ open, taskId, initialStatus = 'open', onClose, onSucc
           margin="normal"
           placeholder="Título da tarefa"
         />
+        {projects.length > 0 && (
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="task-form-project-label">Projeto</InputLabel>
+            <Select
+              labelId="task-form-project-label"
+              label="Projeto"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+            >
+              {projects.map((p) => (
+                <MenuItem key={p.id} value={String(p.id)}>
+                  {p.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
         <FormControl fullWidth margin="normal">
           <InputLabel id="task-form-status-label">Status</InputLabel>
           <Select

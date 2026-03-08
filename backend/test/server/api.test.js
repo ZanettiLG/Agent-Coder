@@ -20,6 +20,8 @@ describe("server API", () => {
     delete require.cache[require.resolve("../../src/tasks/taskLog")];
     delete require.cache[require.resolve("../../src/tasks/repositories")];
     delete require.cache[require.resolve("../../src/tasks/taskService")];
+    delete require.cache[require.resolve("../../src/tasks/taskServiceAsync")];
+    delete require.cache[require.resolve("../../src/tasks/compositionRoot")];
     delete require.cache[require.resolve("../../src/tasks/index")];
     delete require.cache[require.resolve("../../src/server/index")];
     const server = require("../../src/server/index");
@@ -124,10 +126,10 @@ describe("server API", () => {
   it("GET /api/tasks/:id/log?last=N returns at most N events", async () => {
     const create = await request(app).post("/api/tasks").send({ title: "Log last" });
     const id = create.body.id;
-    const tasks = require("../../src/tasks/index");
-    tasks.appendEvent(id, { type: "started", text: "A" });
-    tasks.appendEvent(id, { type: "chunk", text: "B" });
-    tasks.appendEvent(id, { type: "chunk", text: "C" });
+    const tasksMod = require("../../src/tasks/index");
+    await tasksMod.appendEvent(id, { type: "started", text: "A" });
+    await tasksMod.appendEvent(id, { type: "chunk", text: "B" });
+    await tasksMod.appendEvent(id, { type: "chunk", text: "C" });
     const res = await request(app).get(`/api/tasks/${id}/log?last=2`);
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.length, 2);
@@ -159,6 +161,26 @@ describe("server API", () => {
     const id = create.body.id;
     const res = await request(app).post(`/api/tasks/${id}/comments`).send({});
     assert.strictEqual(res.status, 400);
+  });
+
+  it("GET /api/projects returns array with default project", async () => {
+    const res = await request(app).get("/api/projects");
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(res.body));
+    assert.ok(res.body.length >= 1);
+    assert.ok(res.body.some((p) => p.id === 1 && p.name === "Default"));
+  });
+
+  it("POST /api/projects creates project and GET returns it", async () => {
+    const res = await request(app)
+      .post("/api/projects")
+      .send({ name: "My Repo", slug: "my-repo" });
+    assert.strictEqual(res.status, 201);
+    assert.strictEqual(res.body.name, "My Repo");
+    assert.ok(res.body.id);
+    const get = await request(app).get(`/api/projects/${res.body.id}`);
+    assert.strictEqual(get.status, 200);
+    assert.strictEqual(get.body.name, "My Repo");
   });
 
   it("GET /api/worker/status returns object", async () => {
