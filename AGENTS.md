@@ -73,7 +73,7 @@ agent-coder/
 
 - `GET /api/tasks` – lista (metadados, sem body).
 - `GET /api/tasks/:id` – uma tarefa (com body).
-- `GET /api/tasks/:id/log` – log de eventos do agente para a tarefa (array NDJSON: started, chunk, done, error, worker_start, worker_end).
+- `GET /api/tasks/:id/log` – log de eventos do agente para a tarefa (array: started, chunk, done, error, worker_start, worker_end). Query opcional `?last=N`: retorna apenas as últimas N linhas (limitado por `config.maxLogLines`; configurável via `TASK_LOG_MAX_LINES`). Sem `last`, retorna no máximo `maxLogLines` eventos (evita carregar log gigante).
 - `GET /api/tasks/:id/comments` – lista de comentários da tarefa (ordenados por `created_at`); 404 se tarefa não existir.
 - `POST /api/tasks/:id/comments` – criar comentário; body: `{ content (string), author?: 'user'|'agent' }` (default `user`); 404 se tarefa não existir.
 - `POST /api/tasks` – criar; body: `{ title, body?, status?, context? }`. `context` é um array de referências (ex.: `[{ type: 'file', path: 'src/foo.js' }, { type: 'git', scope: 'working' }]`). Tipos: `file`, `folder`, `codebase`, `docs`, `git`, `skill`, `rule`.
@@ -133,12 +133,13 @@ O servidor usa **Socket.IO**; eventos emitidos: `task:updated` (payload `{ id, t
 - **Documentação**: planos e decisões em `docs/`; não editar o plano em `.cursor/plans/` a menos que o usuário peça.
 - **Causa raiz**: ao corrigir bugs, identificar e corrigir a causa exata; não apenas contornar com fallbacks.
 - **Uso de código**: usar variáveis e funções já criadas ou removê-las se ficarem obsoletas.
+- **Dados grandes (context, arrays)**: para conteúdo &gt; ~100KB por tarefa (ex.: um array muito grande), não guardar em coluna única no SQLite; preferir arquivo dedicado (ex.: `context.json` no workspace da tarefa) ou tabela normalizada com paginação. Valores configuráveis (ex.: limites de log) ficam em `backend/src/config`; a lógica não define magic numbers.
 
 ---
 
 ## 9. Ambiente
 
-- **Variáveis**: `CURSOR_API_KEY` (config do coder); `PORT` (servidor); `HOST` (opcional, interface do servidor; padrão `0.0.0.0` para aceitar conexões da rede interna); `WORKER_POLL_MS` (opcional, intervalo do worker em ms); `SERVER_URL` (opcional, URL do servidor para o worker notificar broadcast, padrão `http://localhost:PORT`).
+- **Variáveis**: `CURSOR_API_KEY` (config do coder); `PORT` (servidor); `HOST` (opcional, interface do servidor; padrão `0.0.0.0` para aceitar conexões da rede interna); `WORKER_POLL_MS` (opcional, intervalo do worker em ms); `SERVER_URL` (opcional, URL do servidor para o worker notificar broadcast, padrão `http://localhost:PORT`); `TASK_LOG_MAX_LINES` (opcional, limite máximo de linhas retornadas em `GET /api/tasks/:id/log`; default 2000).
 - **Arquivo `.env`** na raiz (não versionado).
 
 ---

@@ -121,6 +121,20 @@ describe("server API", () => {
     assert.ok(Array.isArray(res.body));
   });
 
+  it("GET /api/tasks/:id/log?last=N returns at most N events", async () => {
+    const create = await request(app).post("/api/tasks").send({ title: "Log last" });
+    const id = create.body.id;
+    const tasks = require("../../src/tasks/index");
+    tasks.appendEvent(id, { type: "started", text: "A" });
+    tasks.appendEvent(id, { type: "chunk", text: "B" });
+    tasks.appendEvent(id, { type: "chunk", text: "C" });
+    const res = await request(app).get(`/api/tasks/${id}/log?last=2`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.length, 2);
+    assert.strictEqual(res.body[0].text, "B");
+    assert.strictEqual(res.body[1].text, "C");
+  });
+
   it("GET /api/tasks/:id/comments returns array", async () => {
     const create = await request(app).post("/api/tasks").send({ title: "Comments me" });
     const id = create.body.id;

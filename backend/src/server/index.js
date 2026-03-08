@@ -3,6 +3,7 @@ const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const tasks = require("../tasks");
+const config = require("../config");
 const { createWorkerStatusReader, STATUS_FILE } = require("../worker/workerStatus");
 const { findGitRoot } = require("../coder/worktree");
 const { listRepoFiles } = require("./repoFiles");
@@ -125,7 +126,12 @@ app.get("/api/tasks/:id/log", (req, res) => {
   try {
     const task = tasks.getTask(req.params.id);
     if (!task) return res.status(404).json({ error: "Tarefa não encontrada" });
-    const log = tasks.getTaskLog(req.params.id);
+    const lastParam = req.query.last;
+    const options =
+      lastParam != null && String(lastParam).trim() !== ""
+        ? { last: Math.min(Math.max(1, parseInt(lastParam, 10) | 0), config.maxLogLines) }
+        : undefined;
+    const log = tasks.getTaskLog(req.params.id, options);
     res.json(log);
   } catch (err) {
     res.status(500).json({ error: err.message });
