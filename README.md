@@ -125,7 +125,9 @@ No board: **clique** em um card para abrir o detalhe (drawer); **arraste** o car
 ## Documentação
 
 - **AGENTS.md** – guia para agentes e referência técnica (estrutura, API, convenções).
-- **docs/jornada-usuario-kanban.md** – jornada do usuário no board Kanban.
-- **docs/jornada-usuario-tarefas.md** – mapa da jornada (lista original).
-- **docs/pesquisa-jornada-tarefas.md** – decisões de arquitetura do frontend.
-- **docs/acessibilidade-responsividade.md** – responsividade do board e recomendações de acessibilidade.
+- **docs/README.md** – índice da documentação por assunto.
+- **docs/01-produto.md** – escopo, direcionamento e visibilidade do agente.
+- **docs/02-jornada-usuario.md** – jornada do usuário (board Kanban + legado lista).
+- **docs/03-arquitetura.md** – stack, decisões de frontend/backend.
+- **docs/04-ux-acessibilidade.md** – responsividade e acessibilidade.
+- **docs/05-roadmap.md** – itens concluídos e próximos passos.

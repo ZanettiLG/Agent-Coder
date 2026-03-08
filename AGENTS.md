@@ -108,7 +108,7 @@ O servidor usa **Socket.IO**; eventos emitidos: `task:updated` (payload `{ id, t
 
 - `src/coder/index.js`: exporta o coder default e **`createCoder(options)`**. Opções: `workspace`, `outputFormat` ('json' padrão ou 'stream').
 - **code(prompt, callbacks)**: callbacks opcionais `{ onChunk?(text), onDone?(result) }` para observar saída (Observer). Modo **stream** (outputFormat === 'stream'): lê stdout por linhas, emite onChunk por linha; onDone ao final. Modo **json** (batch): uma linha JSON, onDone(result), resolve(response).
-- **-p (debug)**: flag opcional em `cursor.js`; usar só para debug local (mais verbosidade no CLI). Ver `docs/direcionamento-produto.md`.
+- **-p (debug)**: flag opcional em `cursor.js`; usar só para debug local (mais verbosidade no CLI). Ver `docs/01-produto.md`.
 - O coder usa o CLI do Cursor (`agent --trust ...`); ver `src/coder/providers/cursor.js` e `base.js`.
 
 ---
@@ -144,7 +144,9 @@ O servidor usa **Socket.IO**; eventos emitidos: `task:updated` (payload `{ id, t
 
 ## 10. Referências no repositório
 
-- Direcionamento do produto e visibilidade do agente: `docs/direcionamento-produto.md`.
-- Jornada do usuário (lista): `docs/jornada-usuario-tarefas.md`.
-- Jornada Kanban: `docs/jornada-usuario-kanban.md`.
-- Pesquisa e decisões (RTK Query, MUI, etc.): `docs/pesquisa-jornada-tarefas.md`.
+- **docs/README.md** – índice da documentação.
+- Produto e visibilidade do agente: `docs/01-produto.md`.
+- Jornada do usuário (Kanban + legado): `docs/02-jornada-usuario.md`.
+- Arquitetura e decisões (stack, rotas): `docs/03-arquitetura.md`.
+- UX, responsividade e acessibilidade: `docs/04-ux-acessibilidade.md`.
+- Roadmap e histórico: `docs/05-roadmap.md`.
