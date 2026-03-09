@@ -1,4 +1,4 @@
-# Autopoiese
+# Autopoieser
 
 Aplicação de **tarefas** com conteúdo em Markdown e **fila de processos**: cada tarefa enfileirada é executada por uma thread do agente (Cursor) com contexto isolado.
 
